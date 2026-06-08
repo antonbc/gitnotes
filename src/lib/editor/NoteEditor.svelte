@@ -25,6 +25,7 @@
   import type { Ext, FormatAction } from "$lib/types";
   import { typstLanguage } from "$lib/editor/typstLanguage";
   import { formatSpec } from "$lib/editor/formatting";
+  import { noteCompletions } from "$lib/editor/completions";
 
   let {
     content,
@@ -45,6 +46,7 @@
   let host: HTMLDivElement;
   let view: EditorView | null = null;
   const language = new Compartment();
+  const completions = new Compartment();
   const vimCompartment = new Compartment();
   let applyingExternalContent = false;
 
@@ -65,6 +67,7 @@
           highlightSelectionMatches(),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           language.of(ext === "md" ? markdown() : typstLanguage),
+          completions.of(noteCompletions(ext)),
           keymap.of([indentWithTab, ...defaultKeymap, ...historyKeymap, ...searchKeymap]),
           placeholder("Start writing..."),
           EditorView.lineWrapping,
@@ -110,6 +113,13 @@
     if (!view) return;
     view.dispatch({
       effects: language.reconfigure(ext === "md" ? markdown() : typstLanguage)
+    });
+  });
+
+  $effect(() => {
+    if (!view) return;
+    view.dispatch({
+      effects: completions.reconfigure(noteCompletions(ext))
     });
   });
 
@@ -188,5 +198,81 @@
     background: #f3f6f5;
     color: #65706d;
     border-right: 1px solid #cbd4d1;
+  }
+
+  :global(.cm-tooltip-autocomplete) {
+    overflow: hidden;
+    border: 1px solid #cbd4d1;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.18);
+    color: #17201f;
+    font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
+  :global(.cm-tooltip-autocomplete ul) {
+    min-width: 220px;
+    max-height: 260px;
+    padding: 4px;
+  }
+
+  :global(.cm-tooltip-autocomplete li) {
+    border-radius: 5px;
+    padding: 5px 8px;
+  }
+
+  :global(.cm-tooltip-autocomplete li[aria-selected]) {
+    background: #e8f3f1;
+    color: #17201f;
+  }
+
+  :global(.cm-completionLabel) {
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+
+  :global(.cm-completionDetail) {
+    color: #65706d;
+    font-size: 11px;
+  }
+
+  :global(.cm-tooltip.cm-completionInfo) {
+    border: 1px solid #cbd4d1;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 14px 36px rgba(0, 0, 0, 0.16);
+    color: #17201f;
+  }
+
+  :global(.gn-completion-info) {
+    display: grid;
+    gap: 8px;
+    width: 190px;
+    padding: 10px;
+  }
+
+  :global(.gn-completion-info-title) {
+    color: #65706d;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  :global(.gn-completion-info code) {
+    display: block;
+    padding: 6px;
+    border-radius: 5px;
+    background: #f3f6f5;
+    color: #17201f;
+    font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+    font-size: 12px;
+    white-space: pre-wrap;
+  }
+
+  :global(.gn-completion-info-preview) {
+    padding: 8px 0 2px;
+    border-top: 1px solid #cbd4d1;
+    font-size: 18px;
+    font-weight: 700;
   }
 </style>
