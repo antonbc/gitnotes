@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+import { renderMarkdown } from "./markdown";
+
+describe("renderMarkdown", () => {
+  it("renders headings", () => {
+    const html = renderMarkdown("# Heading One\n\n## Heading Two");
+    expect(html).toContain("<h1>");
+    expect(html).toContain("Heading One");
+    expect(html).toContain("<h2>");
+    expect(html).toContain("Heading Two");
+  });
+
+  it("renders bold and italic", () => {
+    const html = renderMarkdown("**bold** and *italic*");
+    expect(html).toContain("<strong>");
+    expect(html).toContain("bold");
+    expect(html).toContain("<em>");
+    expect(html).toContain("italic");
+  });
+
+  it("renders a GFM table", () => {
+    const html = renderMarkdown("| Col A | Col B |\n| --- | --- |\n| 1 | 2 |");
+    expect(html).toContain("<table>");
+    expect(html).toContain("<th>");
+    expect(html).toContain("Col A");
+  });
+
+  it("renders inline code", () => {
+    const html = renderMarkdown("Use `console.log()` to debug.");
+    expect(html).toContain("<code>");
+    expect(html).toContain("console.log()");
+  });
+
+  it("renders fenced code blocks", () => {
+    const html = renderMarkdown("```js\nconst x = 1;\n```");
+    expect(html).toContain("<pre>");
+    expect(html).toContain("const x = 1");
+  });
+
+  it("renders inline math with KaTeX", () => {
+    const html = renderMarkdown("Euler: $e^{i\\pi} + 1 = 0$");
+    expect(html).toContain("class=\"katex\"");
+  });
+
+  it("renders display math with KaTeX", () => {
+    const html = renderMarkdown("$$\n\\int_0^\\infty f(x)\\,dx\n$$");
+    expect(html).toContain("class=\"katex-display\"");
+  });
+
+  it("renders task list checkboxes", () => {
+    const html = renderMarkdown("- [x] Done\n- [ ] Todo");
+    expect(html).toContain('type="checkbox"');
+    expect(html).toContain("Done");
+    expect(html).toContain("Todo");
+  });
+
+  it("linkifies bare URLs", () => {
+    const html = renderMarkdown("Visit https://example.com for more.");
+    expect(html).toContain('<a href="https://example.com"');
+  });
+});
