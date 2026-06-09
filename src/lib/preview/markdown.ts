@@ -12,12 +12,34 @@ const md = new MarkdownIt({
   .use(taskLists, { enabled: true });
 
 md.inline.ruler.before("escape", "math_inline", (state: any, silent: boolean) => {
-  if (state.src[state.pos] !== "$" || state.src[state.pos + 1] === "$") return false;
-  const end = state.src.indexOf("$", state.pos + 1);
+  const src: string = state.src;
+  const start: number = state.pos;
+  if (src[start] !== "$" || src[start + 1] === "$") return false;
+  // The opening '$' must be followed by a non-space, and the closing '$' must
+  // not be preceded by a space nor followed by a digit. This keeps real inline
+  // math working while leaving prose like "it cost $5 and $10" untouched
+  // (a stray '$' no longer swallows everything up to the next '$').
+  const afterOpen = src[start + 1];
+  if (afterOpen === undefined || /\s/.test(afterOpen)) return false;
+
+  let end = -1;
+  let scan = start + 1;
+  while (scan < src.length) {
+    const idx = src.indexOf("$", scan);
+    if (idx < 0) break;
+    const before = src[idx - 1];
+    const after = src[idx + 1] ?? "";
+    if (before !== undefined && !/\s/.test(before) && !/\d/.test(after)) {
+      end = idx;
+      break;
+    }
+    scan = idx + 1;
+  }
   if (end < 0) return false;
+
   if (!silent) {
     const token = state.push("math_inline", "math", 0);
-    token.content = state.src.slice(state.pos + 1, end);
+    token.content = src.slice(start + 1, end);
   }
   state.pos = end + 1;
   return true;
@@ -54,6 +76,40 @@ md.renderer.rules.math_block = (tokens: any[], idx: number) =>
     displayMode: true
   })}</div>`;
 
+function normalizeLooseMarkdownHeadings(content: string): string {
+  let fencedBy: "`" | "~" | null = null;
+  let inMathBlock = false;
+
+  return content
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trimStart();
+      const fence = trimmed.match(/^(```+|~~~+)/)?.[1];
+
+      if (fence) {
+        const marker = fence[0] as "`" | "~";
+        // A fence is only closed by its own marker. A different marker appearing
+        // inside an open fence (e.g. a "~~~" line inside a ``` block) is literal
+        // content and must not flip the fence state.
+        if (fencedBy === null) {
+          fencedBy = marker;
+        } else if (fencedBy === marker) {
+          fencedBy = null;
+        }
+        return line;
+      }
+
+      if (!fencedBy && trimmed.trim() === "$$") {
+        inMathBlock = !inMathBlock;
+        return line;
+      }
+
+      if (fencedBy || inMathBlock) return line;
+      return line.replace(/^(\s{0,3})(#{1,6})([^\s#].*)$/, "$1$2 $3");
+    })
+    .join("\n");
+}
+
 export function renderMarkdown(content: string): string {
-  return md.render(content);
+  return md.render(normalizeLooseMarkdownHeadings(content));
 }

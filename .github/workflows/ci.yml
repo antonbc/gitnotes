@@ -1,30 +1,22 @@
 name: ci
 
 on:
-  push:
-    branches: ["**"]
   pull_request:
+  push:
+    branches: ["dev", "main"]
+
+permissions:
+  contents: read
 
 jobs:
-  test:
+  verify:
     runs-on: macos-15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - name: Cache Cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install Node
         uses: actions/setup-node@v4
@@ -35,19 +27,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Configure git for tests
-        run: |
-          git config --global user.email "ci@gitnotes.test"
-          git config --global user.name "GitNotes CI"
-
-      - name: Rust tests
-        run: cargo test --manifest-path src-tauri/Cargo.toml
-
-      - name: Frontend type check
-        run: npm run check
-
-      - name: Frontend tests
-        run: npm test
-
-      - name: Frontend build
-        run: npm run build
+      - name: Verify
+        run: npm run verify

@@ -3,12 +3,7 @@ use crate::core::{
     fs::{normalize_rel, Vault},
 };
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
-use std::{
-    collections::BTreeSet,
-    path::Path,
-    sync::mpsc,
-    time::Duration,
-};
+use std::{collections::BTreeSet, path::Path, sync::mpsc, time::Duration};
 use tauri::{AppHandle, Emitter};
 
 #[derive(Clone, serde::Serialize)]

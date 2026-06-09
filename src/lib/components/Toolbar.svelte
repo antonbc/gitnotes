@@ -1,115 +1,73 @@
 <script lang="ts">
-  import type { Ext, FormatAction, ViewMode } from "$lib/types";
+  import { tooltip } from "$lib/actions/tooltip";
+  import type { Ext, FormatAction } from "$lib/types";
 
   let {
     ext,
     vimMode,
-    toolbar,
-    viewMode,
     onFormat,
     onVimToggle,
-    onToolbarToggle,
-    onViewMode
   }: {
     ext: Ext | null;
     vimMode: boolean;
-    toolbar: boolean;
-    viewMode: ViewMode;
     onFormat: (action: FormatAction) => void;
     onVimToggle: () => void;
-    onToolbarToggle: () => void;
-    onViewMode: (mode: ViewMode) => void;
   } = $props();
 
-  const actions: { action: FormatAction; label: string; title: string }[] = [
-    { action: "bold", label: "B", title: "Bold" },
-    { action: "italic", label: "I", title: "Italic" },
-    { action: "heading1", label: "H1", title: "Heading 1" },
-    { action: "heading2", label: "H2", title: "Heading 2" },
-    { action: "bullet", label: "-", title: "Bullet list" },
-    { action: "numbered", label: "1.", title: "Numbered list" },
-    { action: "task", label: "[ ]", title: "Task" },
-    { action: "link", label: "@", title: "Link" },
-    { action: "image", label: "img", title: "Image" },
-    { action: "inlineCode", label: "`", title: "Inline code" },
-    { action: "codeBlock", label: "{ }", title: "Code block" },
-    { action: "quote", label: ">", title: "Quote" },
-    { action: "table", label: "tbl", title: "Table" }
+  const actions: { action: FormatAction; label: string; name: string; shortcut?: string }[] = [
+    { action: "bold",       label: "B",    name: "Bold",          shortcut: "⌘B" },
+    { action: "italic",     label: "I",    name: "Italic",        shortcut: "⌘I" },
+    { action: "heading1",   label: "H1",   name: "Heading 1",     shortcut: "⌥⌘1" },
+    { action: "heading2",   label: "H2",   name: "Heading 2",     shortcut: "⌥⌘2" },
+    { action: "bullet",     label: "•—",   name: "Bullet list",   shortcut: "⇧⌘8" },
+    { action: "numbered",   label: "1.",   name: "Numbered list", shortcut: "⇧⌘7" },
+    { action: "task",       label: "☐",    name: "Task",          shortcut: "⇧⌘X" },
+    { action: "link",       label: "[]",   name: "Link",          shortcut: "⇧⌘K" },
+    { action: "image",      label: "img",  name: "Image" },
+    { action: "inlineCode", label: "`",    name: "Inline code",   shortcut: "⌘E" },
+    { action: "codeBlock",  label: "{ }",  name: "Code block",    shortcut: "⇧⌘E" },
+    { action: "quote",      label: "❝",    name: "Blockquote" },
+    { action: "table",      label: "⊞",    name: "Table" },
   ];
 </script>
 
-<div class="toolbar">
-  <div class="segments" aria-label="View mode">
-    <button class:active={viewMode === "edit"} title="Edit" onclick={() => onViewMode("edit")}>Edit</button>
-    <button class:active={viewMode === "split"} title="Split" onclick={() => onViewMode("split")}>Split</button>
-    <button class:active={viewMode === "preview"} title="Preview" onclick={() => onViewMode("preview")}>Preview</button>
+<div class="flex items-center h-[38px] px-2 bg-bg-editor border-b-[0.5px] border-border-sub overflow-x-auto gap-0.5 shrink-0">
+  <div class="flex items-center gap-px flex-1">
+    {#each actions as { action, label, name, shortcut }}
+      <button
+        class="h-[26px] min-w-[28px] px-1.5 rounded-md bg-transparent text-text-muted text-[12.5px] leading-none inline-flex items-center justify-center transition-colors duration-100 hover:bg-bg-hover hover:text-text active:opacity-70"
+        class:font-extrabold={action === 'bold'}
+        class:italic={action === 'italic'}
+        aria-label={name}
+        use:tooltip={{ label: name, shortcut }}
+        onclick={() => onFormat(action)}
+      >{label}</button>
+    {/each}
   </div>
 
-  <label class="toggle">
-    <input type="checkbox" checked={vimMode} onchange={onVimToggle} />
-    Vim
-  </label>
-  <label class="toggle">
-    <input type="checkbox" checked={toolbar} onchange={onToolbarToggle} />
-    Tools
-  </label>
+  <div class="flex items-center gap-1 ml-auto pl-2">
+    {#if ext}
+      <span
+        class="text-[11px] font-semibold tracking-[0.01em]"
+        style="color:{ext === 'typ' ? 'var(--badge-typ)' : 'var(--accent)'}"
+      >{ext === 'typ' ? 'Typst' : 'Markdown'}</span>
+    {/if}
 
-  {#if toolbar && ext}
-    <div class="tools" aria-label={`${ext} formatting`}>
-      {#each actions as item}
-        <button title={item.title} onclick={() => onFormat(item.action)}>{item.label}</button>
-      {/each}
-    </div>
-  {/if}
+    <span class="w-px h-4 bg-border mx-1"></span>
+
+    <button
+      class="inline-flex items-center justify-center gap-[5px] h-[26px] px-2 rounded-md text-[12px] font-medium leading-none transition-colors duration-100 {vimMode
+        ? 'bg-accent-sub text-accent'
+        : 'bg-transparent text-text-faint hover:bg-bg-hover hover:text-text-muted'}"
+      aria-label={vimMode ? "Disable Vim mode" : "Enable Vim mode"}
+      use:tooltip={{ label: vimMode ? "Disable Vim mode" : "Enable Vim mode" }}
+      onclick={onVimToggle}
+    >
+      <svg class="block shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none">
+        <path d="M4 5h4l4 11 4-11h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M9 19h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      Vim
+    </button>
+  </div>
 </div>
-
-<style>
-  .toolbar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    min-height: 44px;
-    padding: 6px 10px;
-    border-bottom: 1px solid #cbd4d1;
-    background: #f8faf9;
-    overflow-x: auto;
-  }
-
-  .segments,
-  .tools {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
-  button {
-    min-width: 32px;
-    height: 30px;
-    border: 1px solid #b8c6c2;
-    border-radius: 6px;
-    background: #ffffff;
-    color: #17201f;
-    font: inherit;
-    font-size: 12px;
-    cursor: pointer;
-  }
-
-  button:hover,
-  button.active {
-    border-color: #2d7770;
-    background: #e8f3f1;
-  }
-
-  .segments button {
-    min-width: 62px;
-  }
-
-  .toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    white-space: nowrap;
-    color: #33413f;
-    font-size: 12px;
-  }
-</style>

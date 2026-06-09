@@ -1,0 +1,306 @@
+@import "tailwindcss";
+
+/* ============================================================
+   gitnotes — theme + font token system (ported from prototype)
+   Chrome font is always system sans. The font switcher only
+   changes the EDITOR + PREVIEW prose typeface (--font-editor).
+   ============================================================ */
+
+/* ── Tailwind theme tokens (map our aliases so utilities resolve) ── */
+@theme inline {
+  --color-bg:            var(--bg);
+  --color-bg-sidebar:    var(--bg-sidebar);
+  --color-bg-elevated:   var(--bg-elevated);
+  --color-bg-editor:     var(--bg-editor);
+  --color-bg-input:      var(--bg-input);
+  --color-bg-hover:      var(--bg-hover);
+  --color-bg-active:     var(--bg-active);
+  --color-border:        var(--border);
+  --color-border-sub:    var(--border-subtle);
+  --color-text:          var(--text);
+  --color-text-muted:    var(--text-muted);
+  --color-text-faint:    var(--text-faint);
+  --color-accent:        var(--accent);
+  --color-accent-hover:  var(--accent-hover);
+  --color-accent-sub:    var(--accent-subtle);
+  --color-ok:            var(--ok);
+  --color-warn:          var(--warn);
+  --color-danger:        var(--danger);
+}
+
+/* ── Fonts (verbatim from prototype) ── */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --font-prose-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+  --font-prose-serif: "Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+
+  /* radii / motion / shadow used by our components */
+  --radius-sm: 6px;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --transition: .1s ease;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,.12);
+  --shadow:    0 8px 30px rgba(0,0,0,.18);
+  --shadow-lg: 0 22px 70px rgba(0,0,0,.4);
+}
+
+/* editor/preview prose typeface — driven by [data-font] */
+[data-font="mono"]  { --font-editor: var(--font-mono);        --editor-size: 13px;   --editor-lh: 1.7;  --editor-track: 0; }
+[data-font="sans"]  { --font-editor: var(--font-prose-sans);  --editor-size: 14.5px; --editor-lh: 1.62; --editor-track: 0; }
+[data-font="serif"] { --font-editor: var(--font-prose-serif); --editor-size: 15.5px; --editor-lh: 1.6;  --editor-track: .002em; }
+
+/* ============================================================
+   Component-name aliases → prototype tokens.
+   Resolved lazily against whichever [data-theme] is active.
+   ============================================================ */
+:root {
+  --bg:            var(--win-bg);
+  --bg-sidebar:    var(--sidebar);
+  --bg-elevated:   var(--win-bg);
+  --bg-editor:     var(--editor-bg);
+  --bg-input:      var(--win-bg);
+  --bg-chrome:     var(--chrome);
+  --bg-topbar:     var(--chrome-grad);
+  --bg-toolbar:    var(--tab-bar);
+  --bg-statusbar:  var(--chrome);
+  --bg-hover:      var(--hover);
+  --bg-active:     var(--press);
+  --border:        var(--line);
+  --border-subtle: var(--line-2);
+  --text:          var(--fg);
+  --text-muted:    var(--fg-2);
+  --text-faint:    var(--fg-3);
+  --accent-subtle: var(--accent-soft);
+  --danger:        var(--err);
+  --statusbar-text:  var(--fg-2);
+  --statusbar-hover: var(--hover);
+  --statusbar-badge: var(--hover);
+}
+
+/* ============================================================
+   Themes (ported verbatim from prototype/gitnotes.css)
+   ============================================================ */
+:root, [data-theme="light"] {
+  color-scheme: light;
+  --win-bg: #ffffff;
+  --chrome: #ececee;
+  --chrome-grad: linear-gradient(#f3f3f5, #e6e6e9);
+  --sidebar: #e9e9ec;
+  --content: #ffffff;
+  --editor-bg: #ffffff;
+  --fg: #1d1d1f;
+  --fg-2: #67676c;
+  --fg-3: #9a9aa0;
+  --line: rgba(0,0,0,0.10);
+  --line-2: rgba(0,0,0,0.06);
+  --line-strong: rgba(0,0,0,0.18);
+  --hover: rgba(0,0,0,0.055);
+  --press: rgba(0,0,0,0.10);
+  --accent: #0a6cff;
+  --accent-hover: #0959d6;
+  --accent-soft: rgba(10,108,255,0.12);
+  --sel-fg: #ffffff;
+  --tab-active: #ffffff;
+  --tab-inactive: #e0e0e3;
+  --tab-bar: #e6e6e9;
+  --code-bg: #f3f3f6;
+  --code-border: rgba(0,0,0,0.07);
+  --shadow: 0 0 0 0.5px rgba(0,0,0,0.20), 0 22px 70px rgba(0,0,0,0.30), 0 6px 16px rgba(0,0,0,0.16);
+  --badge-typ: #8a5cf6;
+  --rule: rgba(0,0,0,0.12);
+  --syn-punct: #b9b9c0;
+  --syn-head: #0b62d6;
+  --syn-strong: #1d1d1f;
+  --syn-em: #50506a;
+  --syn-link: #0a6cff;
+  --syn-code: #b5345a;
+  --syn-string: #1f7a3d;
+  --syn-func: #8a5cf6;
+  --syn-list: #c98a17;
+  --syn-quote: #6f6f78;
+  --ok: #1f9d4d;
+  --warn: #d98a00;
+  --err: #e0463e;
+  --add: #1f9d4d;
+  --del: #e0463e;
+  --danger-subtle: rgba(224,70,62,0.10);
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --win-bg: #1d1d1f;
+  --chrome: #2c2c2e;
+  --chrome-grad: linear-gradient(#333335, #2a2a2c);
+  --sidebar: #232325;
+  --content: #1e1e20;
+  --editor-bg: #1c1c1e;
+  --fg: #f1f1f3;
+  --fg-2: #9d9da3;
+  --fg-3: #6a6a70;
+  --line: rgba(255,255,255,0.10);
+  --line-2: rgba(255,255,255,0.06);
+  --line-strong: rgba(255,255,255,0.18);
+  --hover: rgba(255,255,255,0.06);
+  --press: rgba(255,255,255,0.12);
+  --accent: #0a84ff;
+  --accent-hover: #0a78e6;
+  --accent-soft: rgba(10,132,255,0.20);
+  --sel-fg: #ffffff;
+  --tab-active: #313134;
+  --tab-inactive: #242426;
+  --tab-bar: #242426;
+  --code-bg: #2a2a2d;
+  --code-border: rgba(255,255,255,0.08);
+  --shadow: 0 0 0 0.5px rgba(0,0,0,0.6), 0 22px 70px rgba(0,0,0,0.55), 0 6px 16px rgba(0,0,0,0.4);
+  --badge-typ: #b18cff;
+  --rule: rgba(255,255,255,0.14);
+  --syn-punct: #5b5b62;
+  --syn-head: #5aa6ff;
+  --syn-strong: #f1f1f3;
+  --syn-em: #c5c5e0;
+  --syn-link: #5aa6ff;
+  --syn-code: #ff7a9c;
+  --syn-string: #6fd089;
+  --syn-func: #b18cff;
+  --syn-list: #e3b341;
+  --syn-quote: #9a9aa3;
+  --ok: #41c977;
+  --warn: #e3b341;
+  --err: #ff6961;
+  --add: #41c977;
+  --del: #ff6961;
+  --danger-subtle: rgba(255,105,97,0.12);
+}
+
+[data-theme="oled"] {
+  color-scheme: dark;
+  --win-bg: #000000;
+  --chrome: #0a0a0b;
+  --chrome-grad: linear-gradient(#111113, #000000);
+  --sidebar: #050506;
+  --content: #000000;
+  --editor-bg: #000000;
+  --fg: #fafafa;
+  --fg-2: #97979d;
+  --fg-3: #5e5e64;
+  --line: rgba(255,255,255,0.13);
+  --line-2: rgba(255,255,255,0.08);
+  --line-strong: rgba(255,255,255,0.24);
+  --hover: rgba(255,255,255,0.07);
+  --press: rgba(255,255,255,0.14);
+  --accent: #0a84ff;
+  --accent-hover: #0a78e6;
+  --accent-soft: rgba(10,132,255,0.22);
+  --sel-fg: #ffffff;
+  --tab-active: #141416;
+  --tab-inactive: #050506;
+  --tab-bar: #060607;
+  --code-bg: #0e0e10;
+  --code-border: rgba(255,255,255,0.12);
+  --shadow: 0 0 0 0.5px rgba(255,255,255,0.16), 0 22px 80px rgba(0,0,0,0.9);
+  --badge-typ: #b18cff;
+  --rule: rgba(255,255,255,0.16);
+  --syn-punct: #4a4a50;
+  --syn-head: #4d9bff;
+  --syn-strong: #ffffff;
+  --syn-em: #c8c8e4;
+  --syn-link: #4d9bff;
+  --syn-code: #ff80a0;
+  --syn-string: #5fd47f;
+  --syn-func: #b894ff;
+  --syn-list: #ecc04a;
+  --syn-quote: #8f8f97;
+  --ok: #34d36f;
+  --warn: #ecc04a;
+  --err: #ff6b63;
+  --add: #34d36f;
+  --del: #ff6b63;
+  --danger-subtle: rgba(255,107,99,0.12);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  background: var(--win-bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+
+::selection { background: var(--accent-soft); }
+
+/* ── Floating tooltips ── */
+.gn-tooltip {
+  position: fixed;
+  z-index: 1000;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, var(--text) 6%);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity .08s ease, transform .08s ease;
+}
+
+.gn-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.gn-tooltip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gn-tooltip-shortcut {
+  flex-shrink: 0;
+  padding: 1px 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar         { width: 11px; height: 11px; }
+::-webkit-scrollbar-track   { background: transparent; }
+::-webkit-scrollbar-thumb   { background: var(--line-strong); border-radius: 8px; border: 3px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-3); background-clip: padding-box; border: 3px solid transparent; }
+
+/* ── Focus ring ── */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ── Keyframe animations ── */
+@keyframes fade-in  { from { opacity: 0; } }
+@keyframes fade     { from { opacity: 0; } }
+@keyframes pop      { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
+@keyframes pop-up   { from { opacity: 0; transform: translateY(6px) scale(.97); } }
+@keyframes pop-down { from { opacity: 0; transform: translateY(-8px) scale(.985); } }
+@keyframes spin     { to { transform: rotate(360deg); } }

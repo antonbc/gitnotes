@@ -6,10 +6,12 @@ export const syncState = $state<{
   remoteInput: string;
   conflicts: string[];
   message: string;
+  syncError: string | null;
 }>({
   status: null,
   gitAvailable: false,
   remoteInput: "",
   conflicts: [],
-  message: ""
+  message: "",
+  syncError: null,
 });

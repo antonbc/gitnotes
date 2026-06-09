@@ -1,44 +1,152 @@
 <script lang="ts">
   import Fuse from "fuse.js";
-  import type { FileNode } from "$lib/types";
+  import type { FileNode, PaletteCommand } from "$lib/types";
+
+  type PaletteEntry =
+    | {
+        kind: "command";
+        id: string;
+        label: string;
+        detail?: string;
+        shortcut?: string;
+        disabled?: boolean;
+        run: () => void | Promise<void>;
+      }
+    | {
+        kind: "file";
+        id: string;
+        name: string;
+        path: string;
+        ext: "md" | "typ";
+      };
+  type CommandEntry = Extract<PaletteEntry, { kind: "command" }>;
+  type FileEntry = Extract<PaletteEntry, { kind: "file" }>;
 
   let {
     open,
     tree,
+    commands = [],
     onClose,
-    onOpen
+    onOpen,
   }: {
     open: boolean;
     tree: FileNode | null;
+    commands?: PaletteCommand[];
     onClose: () => void;
-    onOpen: (path: string) => void;
+    onOpen: (path: string) => void | Promise<void>;
   } = $props();
 
   let query = $state("");
-  let input = $state<HTMLInputElement | null>(null);
+  let inputEl = $state<HTMLInputElement | null>(null);
+  let activeIdx = $state(0);
 
   const files = $derived(flatten(tree));
-  const fuse = $derived(new Fuse(files, { keys: ["path", "name"], threshold: 0.36 }));
-  const results = $derived(query.trim() ? fuse.search(query).map((hit) => hit.item).slice(0, 20) : files.slice(0, 20));
+  const results = $derived(buildResults(query, files, commands));
 
   $effect(() => {
     if (open) {
       query = "";
-      window.setTimeout(() => input?.focus(), 0);
+      activeIdx = 0;
+      window.setTimeout(() => inputEl?.focus(), 0);
     }
   });
 
-  function choose(path: string) {
-    onOpen(path);
+  $effect(() => {
+    query;
+    results.length;
+    activeIdx = 0;
+  });
+
+  const activeEntry = $derived(results[activeIdx]);
+
+  function isDisabledCommand(entry: PaletteEntry | undefined) {
+    return entry?.kind === "command" && entry.disabled;
+  }
+
+  $effect(() => {
+    const firstEnabled = results.findIndex((entry) => !isDisabledCommand(entry));
+    if (firstEnabled >= 0 && isDisabledCommand(results[activeIdx])) {
+      activeIdx = firstEnabled;
+    }
+  });
+
+  function choose(entry: PaletteEntry) {
+    if (isDisabledCommand(entry)) return;
     onClose();
+    if (entry.kind === "file") {
+      void onOpen(entry.path);
+      return;
+    }
+    void entry.run();
+  }
+
+  function handleKey(e: KeyboardEvent) {
+    if (e.key === "Escape") { onClose(); return; }
+    if (e.key === "ArrowDown") { e.preventDefault(); moveActive(1); }
+    if (e.key === "ArrowUp")   { e.preventDefault(); moveActive(-1); }
+    if (e.key === "Enter" && activeEntry) choose(activeEntry);
+  }
+
+  function moveActive(delta: number) {
+    if (!results.length) {
+      activeIdx = 0;
+      return;
+    }
+
+    for (let step = 1; step <= results.length; step += 1) {
+      const idx = (activeIdx + delta * step + results.length) % results.length;
+      const entry = results[idx];
+      if (!(entry.kind === "command" && entry.disabled)) {
+        activeIdx = idx;
+        return;
+      }
+    }
+  }
+
+  function buildResults(q: string, fileNodes: FileNode[], commandItems: PaletteCommand[]): PaletteEntry[] {
+    const commandEntries: CommandEntry[] = commandItems.map((command) => ({
+      kind: "command",
+      id: `command:${command.id}`,
+      label: command.label,
+      detail: command.detail,
+      shortcut: command.shortcut,
+      disabled: command.disabled,
+      run: command.run,
+    }));
+    const sortedCommands = [
+      ...commandEntries.filter((entry) => !entry.disabled),
+      ...commandEntries.filter((entry) => entry.disabled),
+    ];
+    const fileEntries: FileEntry[] = fileNodes.map((file) => ({
+      kind: "file",
+      id: `file:${file.path}`,
+      name: file.name,
+      path: file.path,
+      ext: file.ext ?? "md",
+    }));
+    const trimmed = q.trim();
+    const commandOnly = trimmed.startsWith(">");
+    const needle = commandOnly ? trimmed.slice(1).trim() : trimmed;
+    const entries = commandOnly ? sortedCommands : [...sortedCommands, ...fileEntries];
+
+    if (!needle) return [...sortedCommands.slice(0, 8), ...fileEntries.slice(0, 12)];
+
+    return new Fuse(entries, {
+      keys: ["label", "detail", "shortcut", "name", "path"],
+      threshold: 0.36,
+      ignoreLocation: true,
+    })
+      .search(needle)
+      .map((hit) => hit.item)
+      .slice(0, 20);
   }
 
   function flatten(root: FileNode | null): FileNode[] {
     if (!root) return [];
     const out: FileNode[] = [];
-    const walk = (node: FileNode) => {
-      if (node.ext) out.push(node);
-      for (const child of node.children ?? []) walk(child);
+    const walk = (n: FileNode) => {
+      if (n.ext) out.push(n);
+      for (const c of n.children ?? []) walk(c);
     };
     walk(root);
     return out;
@@ -46,98 +154,92 @@
 </script>
 
 {#if open}
+  <!-- Scrim -->
   <div
-    class="scrim"
+    class="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[14vh]"
+    style="background:rgba(0,0,0,.35); backdrop-filter:blur(2px)"
     role="button"
-    tabindex="0"
+    tabindex="-1"
     onclick={onClose}
-    onkeydown={(event) => event.key === "Escape" && onClose()}
+    onkeydown={(e) => e.key === "Escape" && onClose()}
   >
-    <section
-      class="palette"
+    <!-- Panel -->
+    <div
+      class="w-full max-w-[600px] overflow-hidden"
+      style="
+        background: var(--bg-elevated);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+      "
       role="dialog"
       aria-modal="true"
+      aria-label="Quick open"
       tabindex="-1"
-      onkeydown={(event) => event.stopPropagation()}
-      onclick={(event) => event.stopPropagation()}
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
     >
-      <input
-        bind:this={input}
-        bind:value={query}
-        placeholder="Find note"
-        onkeydown={(event) => {
-          if (event.key === "Escape") onClose();
-          if (event.key === "Enter" && results[0]) choose(results[0].path);
-        }}
-      />
-      <div class="results">
-        {#each results as file (file.path)}
-          <button onclick={() => choose(file.path)}>
-            <strong>{file.name}</strong>
-            <span>{file.path}</span>
+      <!-- Search input -->
+      <div class="flex items-center gap-2 border-b px-4" style="border-color:var(--border)">
+        <svg width="14" height="14" viewBox="0 0 16 16" class="shrink-0" style="color:var(--text-faint)">
+          <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          <path d="M10.5 10.5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+        <input
+          bind:this={inputEl}
+          bind:value={query}
+          placeholder="Search files and commands…"
+          class="h-11 flex-1 bg-transparent text-[14px] outline-none"
+          style="color:var(--text)"
+          onkeydown={handleKey}
+        />
+        <kbd class="rounded px-1.5 py-0.5 text-[10px]" style="background:var(--bg-hover); color:var(--text-faint)">ESC</kbd>
+      </div>
+
+      <!-- Results -->
+      <div class="max-h-[380px] overflow-y-auto py-1">
+        {#each results as entry, i (entry.id)}
+          <button
+            class="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors"
+            disabled={entry.kind === "command" && entry.disabled}
+            style="
+              background: {i === activeIdx ? 'var(--bg-active)' : 'transparent'};
+              opacity: {entry.kind === 'command' && entry.disabled ? 0.45 : 1};
+            "
+            onclick={() => choose(entry)}
+            onmouseenter={() => {
+              if (!(entry.kind === "command" && entry.disabled)) activeIdx = i;
+            }}
+          >
+            {#if entry.kind === "command"}
+              <span
+                class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold"
+                style="background:var(--bg-hover); color:var(--text-muted)"
+              >⌘</span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[13px]" style="color:var(--text)">{entry.label}</span>
+                {#if entry.detail}
+                  <span class="block truncate text-[11px]" style="color:var(--text-faint)">{entry.detail}</span>
+                {/if}
+              </span>
+              {#if entry.shortcut}
+                <kbd class="rounded px-1.5 py-0.5 text-[10px]" style="background:var(--bg-hover); color:var(--text-faint)">{entry.shortcut}</kbd>
+              {/if}
+            {:else}
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full"
+                style="background: {entry.ext === 'md' ? 'var(--accent)' : '#9f70d4'}"
+              ></span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-[13px]" style="color:var(--text)">{entry.name}</span>
+                <span class="block truncate text-[11px]" style="color:var(--text-faint)">{entry.path}</span>
+              </span>
+            {/if}
           </button>
+        {:else}
+          <p class="px-4 py-6 text-center text-[13px]" style="color:var(--text-faint)">No results found</p>
         {/each}
       </div>
-    </section>
+    </div>
   </div>
 {/if}
-
-<style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    z-index: 10;
-    display: grid;
-    align-items: start;
-    justify-items: center;
-    padding-top: 12vh;
-    background: rgba(23, 32, 31, 0.24);
-  }
-
-  .palette {
-    width: min(640px, calc(100vw - 24px));
-    overflow: hidden;
-    border: 1px solid #b8c6c2;
-    border-radius: 8px;
-    background: #ffffff;
-    box-shadow: 0 18px 50px rgba(23, 32, 31, 0.2);
-  }
-
-  input {
-    width: 100%;
-    height: 44px;
-    box-sizing: border-box;
-    border: 0;
-    border-bottom: 1px solid #cbd4d1;
-    padding: 0 14px;
-    background: transparent;
-    font: inherit;
-    outline: none;
-  }
-
-  .results {
-    max-height: 420px;
-    overflow: auto;
-  }
-
-  button {
-    display: grid;
-    width: 100%;
-    gap: 2px;
-    border: 0;
-    padding: 9px 14px;
-    background: transparent;
-    color: #17201f;
-    text-align: left;
-    cursor: pointer;
-  }
-
-  button:hover {
-    background: #e8f3f1;
-  }
-
-  span {
-    color: #65706d;
-    font-size: 12px;
-  }
-</style>

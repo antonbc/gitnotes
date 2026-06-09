@@ -88,7 +88,10 @@ pub fn convert(vault: &Vault, remote_url: &str) -> Result<(), AppError> {
     }
     crate::core::fs::ensure_vault_layout(vault)?;
     git_run(vault, &["add", "-A"])?;
-    let _ = git_run(vault, &["commit", "--allow-empty", "-m", "Initial GitNotes vault"]);
+    let _ = git_run(
+        vault,
+        &["commit", "--allow-empty", "-m", "Initial GitNotes vault"],
+    );
     set_remote(vault, remote_url)?;
 
     let branch = current_branch(vault).unwrap_or_else(|| "main".to_string());
@@ -126,13 +129,10 @@ pub fn set_remote(vault: &Vault, url: &str) -> Result<(), AppError> {
 
 pub fn pull(vault: &Vault) -> Result<PullResult, AppError> {
     ensure_git()?;
-    let before = status(vault).unwrap_or_else(|_| GitStatus {
-        branch: "main".to_string(),
-        ahead: 0,
-        behind: 0,
-        dirty: false,
-        conflicted: Vec::new(),
-    });
+    // Propagate a status failure instead of assuming a clean tree: defaulting to
+    // `dirty: false` here would silently skip the autosave-before-pull commit and
+    // let `git pull` run over uncommitted local edits.
+    let before = status(vault)?;
     if before.dirty && before.conflicted.is_empty() {
         git_run(vault, &["add", "-A"])?;
         let _ = git_run(vault, &["commit", "-m", "GitNotes autosave before pull"]);
@@ -153,10 +153,12 @@ pub fn pull(vault: &Vault) -> Result<PullResult, AppError> {
 pub fn commit_push(vault: &Vault, message: &str) -> Result<(), AppError> {
     ensure_git()?;
     git_run(vault, &["add", "-A"])?;
-    let _ = git_run(vault, &["commit", "-m", message]);
+    if has_staged_changes(vault)? {
+        git_run(vault, &["commit", "-m", message])?;
+    }
     match git_run(vault, &["push"]) {
         Ok(()) => Ok(()),
-        Err(err) if err.message.to_lowercase().contains("non-fast-forward") => Err(AppError::new(
+        Err(err) if is_non_fast_forward(&err.message) => Err(AppError::new(
             "PULL_FIRST",
             "Remote has new commits. Pull before pushing.",
         )),
@@ -164,11 +166,21 @@ pub fn commit_push(vault: &Vault, message: &str) -> Result<(), AppError> {
     }
 }
 
+/// Git rejects a push that is behind the remote with either a `(non-fast-forward)`
+/// or a `(fetch first)` reason depending on the situation; match both so the
+/// friendly "pull first" hint fires in either case.
+fn is_non_fast_forward(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("non-fast-forward") || lower.contains("fetch first")
+}
+
 pub fn resolve_conflict(vault: &Vault, rel: &str) -> Result<(), AppError> {
     git_run(vault, &["add", rel])?;
     let remaining = status(vault)?.conflicted;
     if remaining.is_empty() {
-        let _ = git_run(vault, &["commit", "--no-edit"]);
+        // Surface a failed merge commit instead of swallowing it; otherwise the UI
+        // reports the conflict resolved while the repo is left mid-merge.
+        git_run(vault, &["commit", "--no-edit"])?;
     }
     Ok(())
 }
@@ -213,16 +225,47 @@ fn current_branch(vault: &Vault) -> Option<String> {
         .filter(|branch| !branch.is_empty())
 }
 
+/// Extract the path from a porcelain v2 unmerged (`u`) line:
+///
+/// ```text
+/// u <XY> <sub> <m1> <m2> <m3> <mW> <h1> <h2> <h3> <path>
+/// ```
+///
+/// The path is the remainder after 10 space-separated fields and may itself
+/// contain spaces, so it must not be tokenized on whitespace (which would
+/// truncate names like `my note.md` to `note.md`).
 fn porcelain_path(line: &str) -> Option<String> {
-    line.split('\t')
-        .last()
-        .filter(|path| *path != line)
-        .map(|path| path.to_string())
-        .or_else(|| line.split_whitespace().last().map(|path| path.to_string()))
+    let mut rest = line;
+    for _ in 0..10 {
+        let idx = rest.find(' ')?;
+        rest = &rest[idx + 1..];
+    }
+    let path = rest.trim();
+    if path.is_empty() {
+        None
+    } else {
+        Some(path.to_string())
+    }
+}
+
+fn has_staged_changes(vault: &Vault) -> Result<bool, AppError> {
+    let output = Command::new("git")
+        .current_dir(&vault.root)
+        .args(["diff", "--cached", "--quiet"])
+        .output()?;
+    match output.status.code() {
+        Some(1) => Ok(true),
+        Some(0) => Ok(false),
+        _ if output.status.success() => Ok(false),
+        _ => Err(AppError::new("GIT_ERROR", stderr_or_stdout(&output))),
+    }
 }
 
 fn git_run(vault: &Vault, args: &[&str]) -> Result<(), AppError> {
-    let output = Command::new("git").current_dir(&vault.root).args(args).output()?;
+    let output = Command::new("git")
+        .current_dir(&vault.root)
+        .args(args)
+        .output()?;
     if output.status.success() {
         Ok(())
     } else {
@@ -231,7 +274,10 @@ fn git_run(vault: &Vault, args: &[&str]) -> Result<(), AppError> {
 }
 
 fn git_output(vault: &Vault, args: &[&str]) -> Result<String, AppError> {
-    let output = Command::new("git").current_dir(&vault.root).args(args).output()?;
+    let output = Command::new("git")
+        .current_dir(&vault.root)
+        .args(args)
+        .output()?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
     } else {
@@ -282,11 +328,21 @@ mod tests {
 
     #[test]
     fn parse_conflicted_file() {
+        // git status --porcelain=v2 separates the path with a space (not a tab)
+        // on unmerged `u` entries.
         let output = "# branch.head main\n# branch.ab +0 -0\n\
-            u UU N... 100644 100644 100644 100644 aaa bbb ccc\tconflict.md\n";
+            u UU N... 100644 100644 100644 100644 aaa bbb ccc conflict.md\n";
         let s = parse_status(output);
         assert!(s.dirty);
         assert_eq!(s.conflicted, vec!["conflict.md"]);
+    }
+
+    #[test]
+    fn parse_conflicted_file_with_spaces() {
+        let output = "# branch.head main\n# branch.ab +0 -0\n\
+            u UU N... 100644 100644 100644 100644 aaa bbb ccc my note.md\n";
+        let s = parse_status(output);
+        assert_eq!(s.conflicted, vec!["my note.md"]);
     }
 
     // ── integration tests: full Git workflow ─────────────────────────────────
@@ -322,7 +378,9 @@ mod tests {
         // 2. Convert a temp vault to git, pointing at the bare remote.
         let v1_dir = TempDir::new().unwrap();
         let v1_root = fs::canonicalize(v1_dir.path()).unwrap();
-        let v1 = Vault { root: v1_root.clone() };
+        let v1 = Vault {
+            root: v1_root.clone(),
+        };
         ensure_vault_layout(&v1).unwrap();
         atomic_write(&v1.root.join("note.md"), "# First Note\n\nHello!").unwrap();
 
@@ -355,7 +413,10 @@ mod tests {
         // 5. Pull in v1 — should get from_v2.md with no conflicts.
         let pull_result = pull(&v1).unwrap();
         assert!(pull_result.conflicts.is_empty(), "Expected clean pull");
-        assert!(v1_root.join("from_v2.md").exists(), "Pulled file should appear in v1");
+        assert!(
+            v1_root.join("from_v2.md").exists(),
+            "Pulled file should appear in v1"
+        );
 
         // 6. Create a conflict: both vaults modify conflict.md differently.
         atomic_write(&v1.root.join("conflict.md"), "# v1 version\n").unwrap();
@@ -378,6 +439,9 @@ mod tests {
         resolve_conflict(&v1, "conflict.md").unwrap();
 
         let final_status = status(&v1).unwrap();
-        assert!(final_status.conflicted.is_empty(), "No conflicts should remain after resolve");
+        assert!(
+            final_status.conflicted.is_empty(),
+            "No conflicts should remain after resolve"
+        );
     }
 }

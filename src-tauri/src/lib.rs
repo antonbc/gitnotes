@@ -31,6 +31,7 @@ pub fn run() {
             files::restore_file,
             files::list_trash,
             files::reveal_in_finder,
+            files::index_paths,
             search::search,
             search::reindex,
             typst::compile_typst,

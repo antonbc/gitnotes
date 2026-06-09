@@ -10,6 +10,21 @@ describe("renderMarkdown", () => {
     expect(html).toContain("Heading Two");
   });
 
+  it("renders loose headings typed without a space after the marker", () => {
+    const html = renderMarkdown("##check\nwhat");
+
+    expect(html).toContain("<h2>");
+    expect(html).toContain("check");
+    expect(html).toContain("<p>what</p>");
+  });
+
+  it("does not normalize loose headings inside fenced code", () => {
+    const html = renderMarkdown("```md\n##not a heading\n```");
+
+    expect(html).toContain("##not a heading");
+    expect(html).not.toContain("<h2>");
+  });
+
   it("renders bold and italic", () => {
     const html = renderMarkdown("**bold** and *italic*");
     expect(html).toContain("<strong>");
