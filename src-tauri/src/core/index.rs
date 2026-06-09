@@ -68,7 +68,11 @@ pub fn index_file(db: &Connection, vault: &Vault, abs: &Path) -> Result<(), AppE
     Ok(())
 }
 
-fn index_file_tx(tx: &rusqlite::Transaction<'_>, vault: &Vault, abs: &Path) -> Result<(), AppError> {
+fn index_file_tx(
+    tx: &rusqlite::Transaction<'_>,
+    vault: &Vault,
+    abs: &Path,
+) -> Result<(), AppError> {
     let rel = normalize_rel(abs, vault)?;
     let content = fs::read_to_string(abs)?;
     let title = title_from_content(&rel, &content);
@@ -137,7 +141,7 @@ pub fn note_files(vault: &Vault) -> Result<Vec<std::path::PathBuf>, AppError> {
     for entry in WalkDir::new(&vault.root)
         .follow_links(false)
         .into_iter()
-        .filter_entry(|entry| should_descend(entry))
+        .filter_entry(should_descend)
     {
         let entry = entry.map_err(|err| AppError::new("WALKDIR_ERROR", err.to_string()))?;
         if entry.file_type().is_file() && ext_for_path(entry.path()).is_some() {
@@ -247,12 +251,19 @@ mod tests {
         let (_tmp, vault) = make_vault();
 
         fs::create_dir(vault.root.join(".archive")).unwrap();
-        atomic_write(&vault.root.join(".archive").join("old.md"), "# Secret\n\nArchived.").unwrap();
+        atomic_write(
+            &vault.root.join(".archive").join("old.md"),
+            "# Secret\n\nArchived.",
+        )
+        .unwrap();
         atomic_write(&vault.root.join("visible.md"), "# Visible\n\nLive note.").unwrap();
 
         reindex_vault(&mut db, &vault, None).unwrap();
 
-        assert!(search(&db, "Secret").unwrap().is_empty(), ".archive should be excluded");
+        assert!(
+            search(&db, "Secret").unwrap().is_empty(),
+            ".archive should be excluded"
+        );
         assert!(!search(&db, "Visible").unwrap().is_empty());
     }
 }

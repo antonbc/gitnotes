@@ -12,23 +12,24 @@ use crate::{
 };
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
 };
 use tauri::State;
 
 #[tauri::command]
-pub fn list_files(state: State<'_, AppState>) -> Result<FileNode, AppError> {
+pub async fn list_files(state: State<'_, AppState>) -> Result<FileNode, AppError> {
     let vault = state.vault()?;
     build_tree(&vault, &vault.root)
 }
 
 #[tauri::command]
-pub fn read_file(state: State<'_, AppState>, path: String) -> Result<FileContent, AppError> {
+pub async fn read_file(state: State<'_, AppState>, path: String) -> Result<FileContent, AppError> {
     let vault = state.vault()?;
     let abs = resolve_existing(&vault, &path)?;
-    let ext = ext_for_path(&abs)
-        .ok_or_else(|| AppError::new("UNSUPPORTED_FILE", "Only .md and .typ notes are supported."))?;
+    let ext = ext_for_path(&abs).ok_or_else(|| {
+        AppError::new("UNSUPPORTED_FILE", "Only .md and .typ notes are supported.")
+    })?;
     Ok(FileContent {
         path,
         ext,
@@ -37,7 +38,7 @@ pub fn read_file(state: State<'_, AppState>, path: String) -> Result<FileContent
 }
 
 #[tauri::command]
-pub fn write_file(
+pub async fn write_file(
     state: State<'_, AppState>,
     path: String,
     content: String,
@@ -57,7 +58,7 @@ pub fn write_file(
 }
 
 #[tauri::command]
-pub fn create_file(
+pub async fn create_file(
     state: State<'_, AppState>,
     dir: String,
     name: String,
@@ -70,7 +71,10 @@ pub fn create_file(
     let dir_rel = safe_relative_path(&dir)?;
     let dir_abs = resolve_existing(&vault, dir_rel.to_string_lossy().as_ref())?;
     if !dir_abs.is_dir() {
-        return Err(AppError::new("NOT_A_DIRECTORY", "Target is not a directory."));
+        return Err(AppError::new(
+            "NOT_A_DIRECTORY",
+            "Target is not a directory.",
+        ));
     }
     let base = sanitize_filename(&name);
     let stem = base
@@ -78,14 +82,12 @@ pub fn create_file(
         .trim_end_matches(".typ")
         .trim()
         .to_string();
-    let stem = if stem.is_empty() { "Untitled".to_string() } else { stem };
-    let mut candidate = dir_abs.join(format!("{stem}.{ext}"));
-    for idx in 2..1000 {
-        if !candidate.exists() {
-            break;
-        }
-        candidate = dir_abs.join(format!("{stem} {idx}.{ext}"));
-    }
+    let stem = if stem.is_empty() {
+        "Untitled".to_string()
+    } else {
+        stem
+    };
+    let candidate = next_available_note_path(&dir_abs, &stem, &ext)?;
     atomic_write(&candidate, "")?;
     let db = state.db()?;
     index::index_file(&db, &vault, &candidate)?;
@@ -93,10 +95,31 @@ pub fn create_file(
 }
 
 #[tauri::command]
-pub fn rename_file(state: State<'_, AppState>, from: String, to: String) -> Result<(), AppError> {
+pub async fn rename_file(
+    state: State<'_, AppState>,
+    from: String,
+    to: String,
+) -> Result<(), AppError> {
     let vault = state.vault()?;
     let source = resolve_existing(&vault, &from)?;
     let target = resolve_for_write(&vault, &to)?;
+    if ext_for_path(&source).is_none() || ext_for_path(&target).is_none() {
+        return Err(AppError::new(
+            "UNSUPPORTED_FILE",
+            "Only .md and .typ notes are supported.",
+        ));
+    }
+    if target.exists() {
+        let same_file = fs::canonicalize(&target)
+            .map(|existing| existing == source)
+            .unwrap_or(false);
+        if !same_file {
+            return Err(AppError::new(
+                "TARGET_EXISTS",
+                "A note with that name already exists.",
+            ));
+        }
+    }
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent)?;
     }
@@ -110,17 +133,35 @@ pub fn rename_file(state: State<'_, AppState>, from: String, to: String) -> Resu
 }
 
 #[tauri::command]
-pub fn move_file(state: State<'_, AppState>, from: String, to_dir: String) -> Result<(), AppError> {
+pub async fn move_file(
+    state: State<'_, AppState>,
+    from: String,
+    to_dir: String,
+) -> Result<(), AppError> {
     let vault = state.vault()?;
     let source = resolve_existing(&vault, &from)?;
     let dir = resolve_existing(&vault, &to_dir)?;
     if !dir.is_dir() {
-        return Err(AppError::new("NOT_A_DIRECTORY", "Move target is not a directory."));
+        return Err(AppError::new(
+            "NOT_A_DIRECTORY",
+            "Move target is not a directory.",
+        ));
     }
     let name = source
         .file_name()
         .ok_or_else(|| AppError::new("INVALID_PATH", "Source path has no file name."))?;
     let target = dir.join(name);
+    if target.exists() {
+        let same_file = fs::canonicalize(&target)
+            .map(|existing| existing == source)
+            .unwrap_or(false);
+        if !same_file {
+            return Err(AppError::new(
+                "TARGET_EXISTS",
+                "A note with that name already exists in the target folder.",
+            ));
+        }
+    }
     fs::rename(&source, &target)?;
     let db = state.db()?;
     db.execute("DELETE FROM notes_fts WHERE path = ?", [from])?;
@@ -129,7 +170,7 @@ pub fn move_file(state: State<'_, AppState>, from: String, to_dir: String) -> Re
 }
 
 #[tauri::command]
-pub fn trash_file(state: State<'_, AppState>, path: String) -> Result<String, AppError> {
+pub async fn trash_file(state: State<'_, AppState>, path: String) -> Result<String, AppError> {
     let vault = state.vault()?;
     let trash_id = trash::trash(state.app_data(), &vault, &path)?;
     let db = state.db()?;
@@ -138,7 +179,7 @@ pub fn trash_file(state: State<'_, AppState>, path: String) -> Result<String, Ap
 }
 
 #[tauri::command]
-pub fn restore_file(state: State<'_, AppState>, trash_id: String) -> Result<(), AppError> {
+pub async fn restore_file(state: State<'_, AppState>, trash_id: String) -> Result<(), AppError> {
     let vault = state.vault()?;
     trash::restore(state.app_data(), &vault, &trash_id)?;
     let mut db = state.db()?;
@@ -147,12 +188,12 @@ pub fn restore_file(state: State<'_, AppState>, trash_id: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub fn list_trash(state: State<'_, AppState>) -> Result<Vec<trash::TrashEntry>, AppError> {
+pub async fn list_trash(state: State<'_, AppState>) -> Result<Vec<trash::TrashEntry>, AppError> {
     trash::list(state.app_data())
 }
 
 #[tauri::command]
-pub fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
+pub async fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Result<(), AppError> {
     let vault = state.vault()?;
     let abs = resolve_existing(&vault, &path)?;
     let output = Command::new("open").arg("-R").arg(abs).output()?;
@@ -166,6 +207,25 @@ pub fn reveal_in_finder(state: State<'_, AppState>, path: String) -> Result<(), 
     }
 }
 
+/// Incrementally (re)index only the given relative paths. Used to keep the
+/// search index fresh in response to filesystem watcher events without
+/// re-walking and re-reading the entire vault on every change. `index_file`
+/// removes the FTS row when the path no longer exists, so this also handles
+/// deletions.
+#[tauri::command]
+pub async fn index_paths(state: State<'_, AppState>, paths: Vec<String>) -> Result<(), AppError> {
+    let vault = state.vault()?;
+    let db = state.db()?;
+    for path in paths {
+        let Ok(rel) = safe_relative_path(&path) else {
+            continue;
+        };
+        let abs = vault.root.join(rel);
+        index::index_file(&db, &vault, &abs)?;
+    }
+    Ok(())
+}
+
 fn build_tree(vault: &Vault, dir: &Path) -> Result<FileNode, AppError> {
     let mut children = Vec::new();
     for entry in fs::read_dir(dir)? {
@@ -177,7 +237,12 @@ fn build_tree(vault: &Vault, dir: &Path) -> Result<FileNode, AppError> {
         }
         if path.is_dir() {
             let node = build_tree(vault, &path)?;
-            if node.children.as_ref().map(|kids| !kids.is_empty()).unwrap_or(false) {
+            if node
+                .children
+                .as_ref()
+                .map(|kids| !kids.is_empty())
+                .unwrap_or(false)
+            {
                 children.push(node);
             }
         } else if ext_for_path(&path).is_some() {
@@ -222,7 +287,10 @@ fn file_node(vault: &Vault, path: &Path) -> Result<FileNode, AppError> {
 }
 
 fn should_skip(path: &Path, name: &str) -> bool {
-    name == ".git" || name == ".archive" || name.ends_with(".tmp") || name.ends_with(".swp")
+    name == ".git"
+        || name == ".archive"
+        || name.ends_with(".tmp")
+        || name.ends_with(".swp")
         || path.file_name().is_none()
 }
 
@@ -232,4 +300,41 @@ fn sanitize_filename(name: &str) -> String {
         .filter(|ch| *ch != '/' && *ch != '\\' && *ch != ':')
         .collect::<String>();
     sanitized.trim().to_string()
+}
+
+fn next_available_note_path(dir: &Path, stem: &str, ext: &str) -> Result<PathBuf, AppError> {
+    for idx in 1..=999 {
+        let filename = if idx == 1 {
+            format!("{stem}.{ext}")
+        } else {
+            format!("{stem} {idx}.{ext}")
+        };
+        let candidate = dir.join(filename);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+
+    Err(AppError::new(
+        "NAME_EXHAUSTED",
+        "No available filename could be found.",
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn next_available_note_path_errors_after_exhausting_candidates() {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join("Untitled.md"), "").unwrap();
+        for idx in 2..=999 {
+            fs::write(dir.path().join(format!("Untitled {idx}.md")), "").unwrap();
+        }
+
+        let err = next_available_note_path(dir.path(), "Untitled", "md").unwrap_err();
+        assert_eq!(err.code, "NAME_EXHAUSTED");
+    }
 }

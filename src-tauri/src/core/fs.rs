@@ -60,7 +60,10 @@ pub fn app_data_dir() -> Result<PathBuf, AppError> {
 pub fn canonicalize_vault(path: impl AsRef<Path>) -> Result<Vault, AppError> {
     let root = fs::canonicalize(path.as_ref())?;
     if !root.is_dir() {
-        return Err(AppError::new("NOT_A_DIRECTORY", "Vault path is not a directory."));
+        return Err(AppError::new(
+            "NOT_A_DIRECTORY",
+            "Vault path is not a directory.",
+        ));
     }
     Ok(Vault { root })
 }
@@ -206,7 +209,9 @@ mod tests {
     #[test]
     fn resolve_existing_rejects_traversal() {
         let tmp = TempDir::new().unwrap();
-        let vault = Vault { root: fs::canonicalize(tmp.path()).unwrap() };
+        let vault = Vault {
+            root: fs::canonicalize(tmp.path()).unwrap(),
+        };
         assert!(resolve_existing(&vault, "../outside").is_err());
         assert!(resolve_existing(&vault, "a/../../outside").is_err());
     }
@@ -215,7 +220,9 @@ mod tests {
     fn resolve_existing_rejects_symlink_escape() {
         let tmp = TempDir::new().unwrap();
         let vault_root = fs::canonicalize(tmp.path()).unwrap();
-        let vault = Vault { root: vault_root.clone() };
+        let vault = Vault {
+            root: vault_root.clone(),
+        };
 
         let external = TempDir::new().unwrap();
         let external_root = fs::canonicalize(external.path()).unwrap();
@@ -231,7 +238,9 @@ mod tests {
     #[test]
     fn resolve_for_write_rejects_traversal() {
         let tmp = TempDir::new().unwrap();
-        let vault = Vault { root: fs::canonicalize(tmp.path()).unwrap() };
+        let vault = Vault {
+            root: fs::canonicalize(tmp.path()).unwrap(),
+        };
         assert!(resolve_for_write(&vault, "../outside.md").is_err());
     }
 
@@ -262,14 +271,19 @@ mod tests {
     #[test]
     fn title_falls_back_to_filename() {
         assert_eq!(title_from_content("notes/my-note.md", ""), "my-note");
-        assert_eq!(title_from_content("notes/my-note.md", "   \n\n  "), "my-note");
+        assert_eq!(
+            title_from_content("notes/my-note.md", "   \n\n  "),
+            "my-note"
+        );
     }
 
     #[test]
     fn normalize_rel_produces_posix_path() {
         let tmp = TempDir::new().unwrap();
         let vault_root = fs::canonicalize(tmp.path()).unwrap();
-        let vault = Vault { root: vault_root.clone() };
+        let vault = Vault {
+            root: vault_root.clone(),
+        };
 
         let abs = vault_root.join("subdir").join("note.md");
         let rel = normalize_rel(&abs, &vault).unwrap();

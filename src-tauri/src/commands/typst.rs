@@ -39,7 +39,7 @@ pub struct TypstResult {
 }
 
 #[tauri::command]
-pub fn compile_typst(
+pub async fn compile_typst(
     state: State<'_, AppState>,
     path: String,
     content: String,
@@ -47,7 +47,10 @@ pub fn compile_typst(
     let vault = state.vault()?;
     let safe = safe_relative_path(&path)?;
     if safe.extension().and_then(|ext| ext.to_str()) != Some("typ") {
-        return Err(AppError::new("INVALID_EXT", "Typst preview requires a .typ file."));
+        return Err(AppError::new(
+            "INVALID_EXT",
+            "Typst preview requires a .typ file.",
+        ));
     }
     let _ = resolve_for_write(&vault, &path)?;
     let file_id = safe.to_string_lossy().replace('\\', "/");
@@ -76,12 +79,21 @@ pub fn compile_typst_inner(vault_root: &Path, file_id: &str, content: &str) -> T
         match warned.output {
             Ok(document) => {
                 let svg_pages = document.pages.iter().map(typst_svg::svg).collect();
-                TypstResult { svg_pages, diagnostics }
+                TypstResult {
+                    svg_pages,
+                    diagnostics,
+                }
             }
             Err(errors) => {
-                diagnostics
-                    .extend(errors.iter().map(|diag| diagnostic_from(world, content, diag)));
-                TypstResult { svg_pages: Vec::new(), diagnostics }
+                diagnostics.extend(
+                    errors
+                        .iter()
+                        .map(|diag| diagnostic_from(world, content, diag)),
+                );
+                TypstResult {
+                    svg_pages: Vec::new(),
+                    diagnostics,
+                }
             }
         }
     }) {
@@ -151,7 +163,10 @@ mod tests {
             "Valid Typst should produce at least one SVG page"
         );
         assert!(
-            result.diagnostics.iter().all(|d| !matches!(d.severity, DiagnosticSeverity::Error)),
+            result
+                .diagnostics
+                .iter()
+                .all(|d| !matches!(d.severity, DiagnosticSeverity::Error)),
             "Valid Typst should have no errors"
         );
     }
@@ -160,10 +175,16 @@ mod tests {
     fn invalid_typst_produces_error_diagnostics() {
         let tmp = TempDir::new().unwrap();
         let result = compile_typst_inner(tmp.path(), "test.typ", "#let x = (");
-        assert!(result.svg_pages.is_empty(), "Failed compile should produce no SVGs");
+        assert!(
+            result.svg_pages.is_empty(),
+            "Failed compile should produce no SVGs"
+        );
         assert!(!result.diagnostics.is_empty(), "Should report diagnostics");
         assert!(
-            result.diagnostics.iter().any(|d| matches!(d.severity, DiagnosticSeverity::Error)),
+            result
+                .diagnostics
+                .iter()
+                .any(|d| matches!(d.severity, DiagnosticSeverity::Error)),
             "Should have at least one error diagnostic"
         );
     }

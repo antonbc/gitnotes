@@ -30,6 +30,7 @@ export const ipc = {
   revealInFinder: (path: string) => invoke<void>("reveal_in_finder", { path }),
   search: (query: string) => invoke<SearchHit[]>("search", { query }),
   reindex: () => invoke<void>("reindex"),
+  indexPaths: (paths: string[]) => invoke<void>("index_paths", { paths }),
   compileTypst: (path: string, content: string) =>
     invoke<TypstResult>("compile_typst", { path, content }),
   checkGitAvailable: () => invoke<boolean>("check_git_available"),

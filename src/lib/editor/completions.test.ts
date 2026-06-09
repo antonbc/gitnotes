@@ -19,6 +19,8 @@ describe("noteCompletionSource", () => {
       "# Heading 1",
       "## Heading 2",
       "### Heading 3",
+      "#### Heading 4",
+      "##### Heading 5",
     ]);
     expect(result?.options[1].apply).toBe("## ");
   });
@@ -38,11 +40,43 @@ describe("noteCompletionSource", () => {
     const result = complete("=", "typ");
 
     expect(result?.from).toBe(0);
-    expect(result?.options.map((option) => option.apply)).toEqual(["= ", "== ", "=== "]);
+    expect(result?.options.map((option) => option.apply)).toEqual([
+      "= ",
+      "== ",
+      "=== ",
+      "==== ",
+      "===== ",
+    ]);
+  });
+
+  it("offers a Markdown slash menu with headings and block inserts", () => {
+    const result = complete("/", "md");
+
+    expect(result?.from).toBe(0);
+    expect(result?.to).toBe(1);
+    expect(result?.options.map((option) => option.label)).toContain("Heading 5");
+    expect(result?.options.map((option) => option.label)).toContain("Table");
+    expect(result?.options.map((option) => option.label)).toContain("Math block");
+  });
+
+  it("filters slash menu options by typed query", () => {
+    const result = complete("/ta", "md");
+    const labels = result?.options.map((option) => option.label);
+
+    expect(labels).toContain("Table");
+    expect(labels).toContain("Task list");
+    expect(labels).not.toContain("Heading 1");
+  });
+
+  it("uses Typst syntax in the slash menu", () => {
+    const result = complete("/link", "typ");
+    const link = result?.options.find((option) => option.label === "Link");
+
+    expect(link?.apply).toBe('#link("url")[text]');
   });
 
   it("does not show implicit completions unless the trigger was just typed", () => {
     expect(complete("", "md")).toBeNull();
-    expect(complete("#", "md", true)?.options).toHaveLength(3);
+    expect(complete("#", "md", true)?.options).toHaveLength(5);
   });
 });

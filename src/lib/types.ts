@@ -64,6 +64,24 @@ export interface AppError {
 }
 
 export type ViewMode = "edit" | "preview" | "split";
+
+export interface EditorMetrics {
+  cursor: { ln: number; col: number };
+  selection: { chars: number; ranges: number };
+  lineCount: number;
+  wordCount: number;
+  charCount: number;
+}
+
+export interface PaletteCommand {
+  id: string;
+  label: string;
+  detail?: string;
+  shortcut?: string;
+  disabled?: boolean;
+  run: () => void | Promise<void>;
+}
+
 export type FormatAction =
   | "bold"
   | "italic"

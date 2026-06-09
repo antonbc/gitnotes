@@ -26,7 +26,7 @@ pub fn trash(app_data: &Path, vault: &Vault, rel: &str) -> Result<String, AppErr
     let source = crate::core::fs::resolve_existing(vault, rel)?;
     let trash_dir = app_data.join("trash");
     fs::create_dir_all(&trash_dir)?;
-    let trash_id = format!("{}-{}", now_secs(), sanitize_id(rel));
+    let trash_id = unique_trash_id(&trash_dir, rel);
     let dest = trash_dir.join(&trash_id);
     fs::rename(source, dest)?;
 
@@ -93,6 +93,29 @@ fn now_secs() -> u64 {
         .unwrap_or_default()
 }
 
+fn now_nanos() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default()
+}
+
+fn unique_trash_id(trash_dir: &Path, rel: &str) -> String {
+    let base = format!("{}-{}", now_nanos(), sanitize_id(rel));
+    if !trash_dir.join(&base).exists() {
+        return base;
+    }
+
+    for idx in 2.. {
+        let candidate = format!("{base}-{idx}");
+        if !trash_dir.join(&candidate).exists() {
+            return candidate;
+        }
+    }
+
+    unreachable!("unbounded trash id search should always return")
+}
+
 fn sanitize_id(path: &str) -> String {
     path.chars()
         .map(|ch| {
@@ -127,7 +150,10 @@ mod tests {
         atomic_write(&note_path, "# Test Note\n\nContent.").unwrap();
 
         let trash_id = trash(app_data.path(), &vault, "test.md").unwrap();
-        assert!(!note_path.exists(), "File should be gone from vault after trash");
+        assert!(
+            !note_path.exists(),
+            "File should be gone from vault after trash"
+        );
 
         let entries = list(app_data.path()).unwrap();
         assert_eq!(entries.len(), 1);
@@ -135,7 +161,10 @@ mod tests {
 
         restore(app_data.path(), &vault, &trash_id).unwrap();
         assert!(note_path.exists(), "File should be back after restore");
-        assert_eq!(fs::read_to_string(&note_path).unwrap(), "# Test Note\n\nContent.");
+        assert_eq!(
+            fs::read_to_string(&note_path).unwrap(),
+            "# Test Note\n\nContent."
+        );
 
         let entries = list(app_data.path()).unwrap();
         assert!(entries.is_empty(), "Trash should be empty after restore");
@@ -150,8 +179,14 @@ mod tests {
 
         restore(app_data.path(), &vault, &trash_id).unwrap();
 
-        assert!(vault.root.join("note 2.md").exists(), "Should restore with deduped name");
-        assert_eq!(fs::read_to_string(vault.root.join("note 2.md")).unwrap(), "Original");
+        assert!(
+            vault.root.join("note 2.md").exists(),
+            "Should restore with deduped name"
+        );
+        assert_eq!(
+            fs::read_to_string(vault.root.join("note 2.md")).unwrap(),
+            "Original"
+        );
     }
 
     #[test]
