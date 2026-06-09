@@ -128,6 +128,31 @@ fn sanitize_id(path: &str) -> String {
         .collect()
 }
 
+fn dedupe_restore_target(vault: &Vault, original: &str) -> Result<PathBuf, AppError> {
+    let safe = safe_relative_path(original)?;
+    let stem = safe
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("restored");
+    let ext = safe.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+    let parent = safe.parent().unwrap_or_else(|| Path::new(""));
+    for idx in 2..1000 {
+        let name = if ext.is_empty() {
+            format!("{stem} {idx}")
+        } else {
+            format!("{stem} {idx}.{ext}")
+        };
+        let candidate = vault.root.join(parent).join(name);
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(AppError::new(
+        "RESTORE_CONFLICT",
+        "Could not find an available restore filename.",
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,29 +225,4 @@ mod tests {
         let (app_data, _vault_dir, vault) = setup();
         assert!(restore(app_data.path(), &vault, "bogus-id").is_err());
     }
-}
-
-fn dedupe_restore_target(vault: &Vault, original: &str) -> Result<PathBuf, AppError> {
-    let safe = safe_relative_path(original)?;
-    let stem = safe
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("restored");
-    let ext = safe.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-    let parent = safe.parent().unwrap_or_else(|| Path::new(""));
-    for idx in 2..1000 {
-        let name = if ext.is_empty() {
-            format!("{stem} {idx}")
-        } else {
-            format!("{stem} {idx}.{ext}")
-        };
-        let candidate = vault.root.join(parent).join(name);
-        if !candidate.exists() {
-            return Ok(candidate);
-        }
-    }
-    Err(AppError::new(
-        "RESTORE_CONFLICT",
-        "Could not find an available restore filename.",
-    ))
 }

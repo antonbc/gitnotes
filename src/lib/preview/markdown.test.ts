@@ -62,6 +62,19 @@ describe("renderMarkdown", () => {
     expect(html).toContain("class=\"katex-display\"");
   });
 
+  it("does not treat dollar amounts in prose as inline math", () => {
+    const html = renderMarkdown("It cost $5 today and $10 tomorrow.");
+    expect(html).not.toContain("class=\"katex\"");
+    expect(html).toContain("$5 today and $10 tomorrow.");
+  });
+
+  it("does not flip code-fence state on a different fence marker inside a block", () => {
+    const html = renderMarkdown("```md\n~~~\n##still code\n```\n\n##heading");
+    expect(html).toContain("##still code");
+    expect(html).toContain("<h2>");
+    expect(html).toContain("heading");
+  });
+
   it("renders task list checkboxes", () => {
     const html = renderMarkdown("- [x] Done\n- [ ] Todo");
     expect(html).toContain('type="checkbox"');
