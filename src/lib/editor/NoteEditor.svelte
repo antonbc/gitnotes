@@ -14,6 +14,7 @@
 </script>
 
 <script lang="ts">
+  import { acceptCompletion } from "@codemirror/autocomplete";
   import { markdown } from "@codemirror/lang-markdown";
   import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
   import { bracketMatching, foldGutter, syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
@@ -23,6 +24,7 @@
   import { vim } from "@replit/codemirror-vim";
   import { onDestroy, onMount } from "svelte";
   import type { EditorMetrics, Ext, FormatAction } from "$lib/types";
+  import { noteHighlightStyle } from "$lib/editor/highlight";
   import { typstLanguage } from "$lib/editor/typstLanguage";
   import { formatSpec } from "$lib/editor/formatting";
   import { noteCompletions } from "$lib/editor/completions";
@@ -75,6 +77,44 @@
     },
     ".cm-selectionBackground": {
       backgroundColor: "var(--accent-subtle) !important",
+    },
+    ".cm-searchMatch": {
+      backgroundColor: "var(--accent-subtle)",
+      outline: "1px solid var(--accent)",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+      backgroundColor: "var(--accent-soft, var(--accent-subtle))",
+    },
+    // Vim status line and search panel follow the active theme instead of
+    // CodeMirror's default light chrome.
+    ".cm-panels": {
+      backgroundColor: "var(--bg-toolbar)",
+      color: "var(--text)",
+    },
+    ".cm-panels.cm-panels-bottom": {
+      borderTop: "1px solid var(--border)",
+    },
+    ".cm-panel input": {
+      backgroundColor: "var(--bg-input)",
+      color: "var(--text)",
+      border: "1px solid var(--border)",
+      borderRadius: "5px",
+      outline: "none",
+    },
+    ".cm-panel button": {
+      backgroundImage: "none",
+      backgroundColor: "var(--bg-hover)",
+      color: "var(--text)",
+      border: "1px solid var(--border)",
+      borderRadius: "5px",
+    },
+    ".cm-panel.cm-search label": {
+      color: "var(--text-muted)",
+    },
+    ".cm-panel.cm-search [name=close]": {
+      color: "var(--text-muted)",
+      backgroundColor: "transparent",
+      border: "none",
     },
     ".cm-tooltip": {
       fontFamily: "var(--font-ui)",
@@ -272,10 +312,14 @@
           bracketMatching(),
           highlightSelectionMatches(),
           gitNotesEditorTheme,
+          syntaxHighlighting(noteHighlightStyle),
           syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
           language.of(ext === "md" ? markdown() : typstLanguage),
           completions.of(noteCompletions(ext)),
           keymap.of([
+            // Must precede indentWithTab so Tab accepts an open
+            // autocomplete suggestion instead of indenting the line.
+            { key: "Tab", run: acceptCompletion },
             ...formattingKeymap,
             indentWithTab,
             ...defaultKeymap,

@@ -156,13 +156,34 @@ pub fn commit_push(vault: &Vault, message: &str) -> Result<(), AppError> {
     if has_staged_changes(vault)? {
         git_run(vault, &["commit", "-m", message])?;
     }
+    // The commit above is kept either way; only the upload needs a remote.
+    if remote_url(vault).is_none() {
+        return Err(AppError::new(
+            "NO_REMOTE",
+            "Changes were committed locally, but no Git remote is configured. \
+             Connect a remote URL under Save / Sync to push.",
+        ));
+    }
     match git_run(vault, &["push"]) {
         Ok(()) => Ok(()),
+        // Vaults that were git repos before GitNotes opened them (rather than
+        // converted through the app, which pushes with -u) may have no
+        // upstream yet; set it instead of surfacing git's fatal error.
+        Err(err) if is_no_upstream(&err.message) => {
+            let branch = current_branch(vault).unwrap_or_else(|| "main".to_string());
+            map_push_error(git_run(vault, &["push", "-u", "origin", &branch]))
+        }
+        result => map_push_error(result),
+    }
+}
+
+fn map_push_error(result: Result<(), AppError>) -> Result<(), AppError> {
+    match result {
         Err(err) if is_non_fast_forward(&err.message) => Err(AppError::new(
             "PULL_FIRST",
             "Remote has new commits. Pull before pushing.",
         )),
-        Err(err) => Err(err),
+        other => other,
     }
 }
 
@@ -172,6 +193,11 @@ pub fn commit_push(vault: &Vault, message: &str) -> Result<(), AppError> {
 fn is_non_fast_forward(message: &str) -> bool {
     let lower = message.to_lowercase();
     lower.contains("non-fast-forward") || lower.contains("fetch first")
+}
+
+fn is_no_upstream(message: &str) -> bool {
+    let lower = message.to_lowercase();
+    lower.contains("no upstream branch") || lower.contains("--set-upstream")
 }
 
 pub fn resolve_conflict(vault: &Vault, rel: &str) -> Result<(), AppError> {
@@ -443,5 +469,101 @@ mod tests {
             final_status.conflicted.is_empty(),
             "No conflicts should remain after resolve"
         );
+    }
+
+    #[test]
+    fn commit_push_uploads_and_reports_pull_first_when_behind() {
+        if !git_available() || !git_user_configured() {
+            eprintln!("Skipping: git unavailable or user not configured");
+            return;
+        }
+
+        let remote_dir = TempDir::new().unwrap();
+        assert!(git_cmd(remote_dir.path(), &["init", "--bare"]));
+        let remote_url = remote_dir.path().to_string_lossy().to_string();
+
+        let v1_dir = TempDir::new().unwrap();
+        let v1 = Vault {
+            root: fs::canonicalize(v1_dir.path()).unwrap(),
+        };
+        ensure_vault_layout(&v1).unwrap();
+        atomic_write(&v1.root.join("note.md"), "# Note").unwrap();
+        convert(&v1, &remote_url).unwrap();
+
+        // Happy path: a new change is committed and lands on the remote.
+        atomic_write(&v1.root.join("uploaded.md"), "# Uploaded").unwrap();
+        commit_push(&v1, "Upload note").unwrap();
+        let after = status(&v1).unwrap();
+        assert_eq!(after.ahead, 0, "Push should leave nothing to upload");
+        assert!(!after.dirty);
+
+        // Nothing to commit: pushing again is a no-op that must not error.
+        commit_push(&v1, "Empty").unwrap();
+
+        // Second client pushes a commit; v1 is now behind and must get the
+        // friendly PULL_FIRST error rather than git's raw rejection.
+        let v2_dir = TempDir::new().unwrap();
+        let v2_root = v2_dir.path().to_path_buf();
+        assert!(Command::new("git")
+            .args(["clone", &remote_url, &v2_root.to_string_lossy()])
+            .output()
+            .unwrap()
+            .status
+            .success());
+        fs::write(v2_root.join("note.md"), "# Note v2").unwrap();
+        git_cmd(&v2_root, &["add", "-A"]);
+        git_cmd(&v2_root, &["commit", "-m", "v2 edit"]);
+        git_cmd(&v2_root, &["push"]);
+
+        atomic_write(&v1.root.join("note.md"), "# Note v1").unwrap();
+        let err = commit_push(&v1, "v1 edit").unwrap_err();
+        assert_eq!(err.code, "PULL_FIRST");
+    }
+
+    #[test]
+    fn commit_push_without_remote_reports_no_remote() {
+        if !git_available() || !git_user_configured() {
+            eprintln!("Skipping: git unavailable or user not configured");
+            return;
+        }
+
+        let dir = TempDir::new().unwrap();
+        let vault = Vault {
+            root: fs::canonicalize(dir.path()).unwrap(),
+        };
+        assert!(git_cmd(&vault.root, &["init"]));
+        atomic_write(&vault.root.join("note.md"), "# Note").unwrap();
+
+        let err = commit_push(&vault, "First").unwrap_err();
+        assert_eq!(err.code, "NO_REMOTE");
+        // The local commit must still have been created.
+        assert!(!status(&vault).unwrap().dirty);
+    }
+
+    #[test]
+    fn commit_push_sets_missing_upstream() {
+        if !git_available() || !git_user_configured() {
+            eprintln!("Skipping: git unavailable or user not configured");
+            return;
+        }
+
+        let remote_dir = TempDir::new().unwrap();
+        assert!(git_cmd(remote_dir.path(), &["init", "--bare"]));
+
+        // A pre-existing repo with a remote but no upstream (never pushed),
+        // as when a user git-inits a vault manually before opening it.
+        let dir = TempDir::new().unwrap();
+        let vault = Vault {
+            root: fs::canonicalize(dir.path()).unwrap(),
+        };
+        assert!(git_cmd(&vault.root, &["init"]));
+        atomic_write(&vault.root.join("note.md"), "# Note").unwrap();
+        set_remote(&vault, remote_dir.path().to_string_lossy().as_ref()).unwrap();
+
+        commit_push(&vault, "First push").unwrap();
+
+        let after = status(&vault).unwrap();
+        assert_eq!(after.ahead, 0, "Upstream should be set and push complete");
+        assert!(!after.dirty);
     }
 }

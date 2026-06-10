@@ -33,7 +33,6 @@
         : 'text-text-muted hover:bg-bg-hover hover:text-text'}"
       role="tab"
       aria-selected={active}
-      title={tab.path}
     >
       <!-- Top accent line -->
       {#if active}
@@ -42,7 +41,7 @@
 
       <button
         class="flex-1 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-left border-0 bg-transparent text-inherit pl-3 pr-1.5 h-full cursor-pointer"
-        title="Click to select; double-click to rename"
+        use:tooltip={{ label: `${tab.path} — double-click to rename`, placement: "bottom" }}
         onclick={() => onSelect(tab.path)}
         ondblclick={() => onRename(tab.path)}
       >

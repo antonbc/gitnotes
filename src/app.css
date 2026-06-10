@@ -52,9 +52,13 @@
 
 /* ============================================================
    Component-name aliases → prototype tokens.
-   Resolved lazily against whichever [data-theme] is active.
+   Custom properties substitute var() at the element they are
+   declared on, so the aliases must be (re)declared on every
+   element that carries [data-theme] — not just :root — or a
+   themed subtree (e.g. the .app shell) keeps the :root values
+   for all alias-based styles while raw tokens switch.
    ============================================================ */
-:root {
+:root, [data-theme] {
   --bg:            var(--win-bg);
   --bg-sidebar:    var(--sidebar);
   --bg-elevated:   var(--win-bg);

@@ -17,9 +17,11 @@
   import StatusBar from "$lib/components/StatusBar.svelte";
   import Tabs from "$lib/components/Tabs.svelte";
   import Toolbar from "$lib/components/Toolbar.svelte";
+  import TrashPanel from "$lib/components/TrashPanel.svelte";
   import { tooltip } from "$lib/actions/tooltip";
   import NoteEditor from "$lib/editor/NoteEditor.svelte";
   import { errorMessage } from "$lib/errors";
+  import { resolveRenameInput } from "$lib/files/rename";
   import { canCommitPush as canCommitPushNow } from "$lib/git/commit";
   import { ipc } from "$lib/ipc";
   import PreviewPane from "$lib/preview/PreviewPane.svelte";
@@ -35,6 +37,7 @@
   let activeSaveCount = 0;
   let appearanceOpen = $state(false);
   let tutorialOpen = $state(false);
+  let trashOpen = $state(false);
 
   const activeTab = $derived(
     editorState.tabs.find((t) => t.path === editorState.activePath) ?? null
@@ -625,46 +628,17 @@
     return path.split("/").at(-1) ?? path;
   }
 
-  function dirName(path: string) {
-    const idx = path.lastIndexOf("/");
-    return idx >= 0 ? path.slice(0, idx) : "";
-  }
-
-  function extFromPath(path: string): Ext {
-    return path.endsWith(".typ") ? "typ" : "md";
-  }
-
-  function renameTarget(path: string, input: string): { path: string; ext: Ext } | null {
-    const trimmed = input.trim();
-    if (!trimmed) return null;
-    if (trimmed.includes("/") || trimmed.includes("\\")) {
-      window.alert("Use a file name only. Move can be added separately.");
-      return null;
-    }
-
-    const currentExt = extFromPath(path);
-    const hasSupportedExt = /\.(md|typ)$/i.test(trimmed);
-    const hasAnyExt = /\.[^./\\]+$/.test(trimmed);
-    if (hasAnyExt && !hasSupportedExt) {
-      window.alert("GitNotes supports only .md and .typ notes.");
-      return null;
-    }
-
-    const nextName = hasSupportedExt ? trimmed : `${trimmed}.${currentExt}`;
-    const nextExt = extFromPath(nextName);
-    const dir = dirName(path);
-    return {
-      path: dir ? `${dir}/${nextName}` : nextName,
-      ext: nextExt,
-    };
-  }
-
   async function renameFile(path: string) {
-    const next = window.prompt("Rename note", fileName(path));
+    const next = window.prompt("Rename note — use / to move into a folder", fileName(path));
     if (next === null) return;
 
-    const target = renameTarget(path, next);
-    if (!target || target.path === path) return;
+    const resolved = resolveRenameInput(path, next);
+    if (resolved.kind === "noop") return;
+    if (resolved.kind === "invalid") {
+      window.alert(resolved.message);
+      return;
+    }
+    const target = resolved;
 
     const tab = editorState.tabs.find((t) => t.path === path);
     if (tab?.dirty) {
@@ -742,7 +716,7 @@
       await saveAllTabs();
       await ipc.gitCommitPush(syncState.message || "Update notes");
       syncState.message = "";
-      editorState.localChanges = new Set();
+      editorState.localChanges.clear();
       syncState.syncError = null;
       await refreshGitStatus();
     } catch (err) {
@@ -890,6 +864,15 @@
       shortcut: "⇧⌘S",
       disabled: !canCommitPush,
       run: commitPush,
+    },
+    {
+      id: "open-trash",
+      label: "Open Trash",
+      detail: "Restore deleted notes",
+      disabled: !vaultState.info,
+      run: () => {
+        trashOpen = true;
+      },
     },
     {
       id: "open-vault",
@@ -1061,6 +1044,7 @@
         onTrash={trashFile}
         onReveal={(p) => void ipc.revealInFinder(p)}
         onSearchClick={() => (searchState.paletteOpen = true)}
+        onTrashOpen={() => (trashOpen = true)}
       />
     </aside>
 
@@ -1172,6 +1156,16 @@
     onSearch={() => (searchState.paletteOpen = true)}
   />
 
+  <!-- ── Trash ──────────────────────────────────────────────────────────────── -->
+  <TrashPanel
+    open={trashOpen}
+    onClose={() => (trashOpen = false)}
+    onRestored={async () => {
+      await refreshTree();
+      await refreshGitStatus();
+    }}
+  />
+
   <!-- ── Palette ────────────────────────────────────────────────────────────── -->
   <Palette
     open={searchState.paletteOpen}
@@ -1179,6 +1173,7 @@
     commands={paletteCommands}
     onClose={() => (searchState.paletteOpen = false)}
     onOpen={openFile}
+    onSearchNotes={vaultState.info ? (query) => ipc.search(query) : null}
   />
 </div>
 
@@ -1438,10 +1433,8 @@
 
   .utility-strip {
     display: inline-flex;
-    justify-content: center;
     align-items: center;
-    height: 20px;
-    width:fit-content;
+    gap: 2px;
     overflow: visible;
     flex-shrink: 0;
   }
@@ -1450,10 +1443,16 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 6px;
+    height: 28px;
+    min-width: 28px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 7px;
     background: transparent;
-    height:min-content;
     color: var(--fg-2);
     font-family: var(--font-ui);
+    box-sizing: border-box;
     cursor: pointer;
     transition: background var(--transition), color var(--transition);
   }
@@ -1461,17 +1460,6 @@
   .utility-btn.active {
     background: var(--press);
     color: var(--fg);
-    border-radius: 5px;
-    margin: 10px;
-  }
-
-  .help-trigger {
-    width: 42px;
-  }
-
-  .appearance-trigger {
-    gap: 14px;
-    padding: 0 16px 0 15px;
   }
 
   :global(.utility-icon) {
@@ -1483,11 +1471,6 @@
     font-size: 15px;
     font-weight: 700;
     color: currentColor;
-  }
-
-  .search-trigger {
-    gap: 12px;
-    padding: 0 11px 0 14px;
   }
 
   .search-trigger kbd {

@@ -5,6 +5,19 @@
     <link rel="icon" href="%sveltekit.assets%/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>GitNotes</title>
+    <script>
+      // Apply the saved theme before first paint so the window does not flash
+      // the default light theme (and a half-themed shell) on every launch.
+      try {
+        var gnPrefs = JSON.parse(localStorage.getItem("gitnotes.prefs.v1") || "{}");
+        if (["light", "dark", "oled"].includes(gnPrefs.theme)) {
+          document.documentElement.dataset.theme = gnPrefs.theme;
+        }
+        if (["mono", "sans", "serif"].includes(gnPrefs.font)) {
+          document.documentElement.dataset.font = gnPrefs.font;
+        }
+      } catch (e) {}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

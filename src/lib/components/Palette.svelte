@@ -1,6 +1,7 @@
 <script lang="ts">
   import Fuse from "fuse.js";
-  import type { FileNode, PaletteCommand } from "$lib/types";
+  import { parseSnippet, type SnippetSegment } from "$lib/search/snippet";
+  import type { FileNode, PaletteCommand, SearchHit } from "$lib/types";
 
   type PaletteEntry =
     | {
@@ -18,6 +19,13 @@
         name: string;
         path: string;
         ext: "md" | "typ";
+      }
+    | {
+        kind: "hit";
+        id: string;
+        title: string;
+        path: string;
+        snippet: SnippetSegment[];
       };
   type CommandEntry = Extract<PaletteEntry, { kind: "command" }>;
   type FileEntry = Extract<PaletteEntry, { kind: "file" }>;
@@ -28,20 +36,47 @@
     commands = [],
     onClose,
     onOpen,
+    onSearchNotes = null,
   }: {
     open: boolean;
     tree: FileNode | null;
     commands?: PaletteCommand[];
     onClose: () => void;
     onOpen: (path: string) => void | Promise<void>;
+    /** Full-text vault search (FTS5). Null when unavailable (browser, no vault). */
+    onSearchNotes?: ((query: string) => Promise<SearchHit[]>) | null;
   } = $props();
 
   let query = $state("");
   let inputEl = $state<HTMLInputElement | null>(null);
   let activeIdx = $state(0);
+  let contentHits = $state<SearchHit[]>([]);
+  let searchToken = 0;
 
   const files = $derived(flatten(tree));
-  const results = $derived(buildResults(query, files, commands));
+  const results = $derived(buildResults(query, files, commands, contentHits));
+
+  // Debounced full-text search over note content.
+  $effect(() => {
+    const trimmed = query.trim();
+    const token = ++searchToken;
+
+    if (!open || !onSearchNotes || trimmed.startsWith(">") || trimmed.length < 2) {
+      contentHits = [];
+      return;
+    }
+
+    const handle = window.setTimeout(async () => {
+      try {
+        const hits = await onSearchNotes(trimmed);
+        if (token === searchToken) contentHits = hits;
+      } catch {
+        if (token === searchToken) contentHits = [];
+      }
+    }, 140);
+
+    return () => window.clearTimeout(handle);
+  });
 
   $effect(() => {
     if (open) {
@@ -73,7 +108,7 @@
   function choose(entry: PaletteEntry) {
     if (isDisabledCommand(entry)) return;
     onClose();
-    if (entry.kind === "file") {
+    if (entry.kind === "file" || entry.kind === "hit") {
       void onOpen(entry.path);
       return;
     }
@@ -103,7 +138,12 @@
     }
   }
 
-  function buildResults(q: string, fileNodes: FileNode[], commandItems: PaletteCommand[]): PaletteEntry[] {
+  function buildResults(
+    q: string,
+    fileNodes: FileNode[],
+    commandItems: PaletteCommand[],
+    hits: SearchHit[]
+  ): PaletteEntry[] {
     const commandEntries: CommandEntry[] = commandItems.map((command) => ({
       kind: "command",
       id: `command:${command.id}`,
@@ -131,7 +171,7 @@
 
     if (!needle) return [...sortedCommands.slice(0, 8), ...fileEntries.slice(0, 12)];
 
-    return new Fuse(entries, {
+    const fuzzy = new Fuse(entries, {
       keys: ["label", "detail", "shortcut", "name", "path"],
       threshold: 0.36,
       ignoreLocation: true,
@@ -139,6 +179,25 @@
       .search(needle)
       .map((hit) => hit.item)
       .slice(0, 20);
+
+    if (commandOnly) return fuzzy;
+
+    // Full-text content matches, excluding notes already listed by name.
+    const shown = new Set(
+      fuzzy.filter((entry) => entry.kind === "file").map((entry) => entry.path)
+    );
+    const hitEntries: PaletteEntry[] = hits
+      .filter((hit) => !shown.has(hit.path))
+      .slice(0, 10)
+      .map((hit) => ({
+        kind: "hit",
+        id: `hit:${hit.path}`,
+        title: hit.title || hit.path.split("/").at(-1) || hit.path,
+        path: hit.path,
+        snippet: parseSnippet(hit.snippet),
+      }));
+
+    return [...fuzzy, ...hitEntries];
   }
 
   function flatten(root: FileNode | null): FileNode[] {
@@ -199,6 +258,11 @@
       <!-- Results -->
       <div class="max-h-[380px] overflow-y-auto py-1">
         {#each results as entry, i (entry.id)}
+          {#if entry.kind === "hit" && results[i - 1]?.kind !== "hit"}
+            <p class="px-4 pb-1 pt-2 text-[10.5px] font-bold tracking-[0.05em] uppercase" style="color:var(--text-faint)">
+              Content matches
+            </p>
+          {/if}
           <button
             class="flex w-full items-center gap-3 px-4 py-2 text-left transition-colors"
             disabled={entry.kind === "command" && entry.disabled}
@@ -211,7 +275,27 @@
               if (!(entry.kind === "command" && entry.disabled)) activeIdx = i;
             }}
           >
-            {#if entry.kind === "command"}
+            {#if entry.kind === "hit"}
+              <svg width="13" height="13" viewBox="0 0 16 16" class="shrink-0" style="color:var(--text-faint)">
+                <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+                <path d="M10.5 10.5l3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              <span class="min-w-0 flex-1">
+                <span class="flex items-baseline gap-2 min-w-0">
+                  <span class="truncate text-[13px]" style="color:var(--text)">{entry.title}</span>
+                  <span class="truncate text-[11px] shrink-[2]" style="color:var(--text-faint)">{entry.path}</span>
+                </span>
+                <span class="block truncate text-[11.5px]" style="color:var(--text-muted)">
+                  {#each entry.snippet as segment}
+                    {#if segment.mark}
+                      <mark class="rounded-[2px] px-px" style="background:var(--accent-subtle); color:var(--accent)">{segment.text}</mark>
+                    {:else}
+                      {segment.text}
+                    {/if}
+                  {/each}
+                </span>
+              </span>
+            {:else if entry.kind === "command"}
               <span
                 class="grid h-6 w-6 shrink-0 place-items-center rounded-md text-[11px] font-semibold"
                 style="background:var(--bg-hover); color:var(--text-muted)"
@@ -228,7 +312,7 @@
             {:else}
               <span
                 class="h-1.5 w-1.5 shrink-0 rounded-full"
-                style="background: {entry.ext === 'md' ? 'var(--accent)' : '#9f70d4'}"
+                style="background: {entry.ext === 'md' ? 'var(--accent)' : 'var(--badge-typ)'}"
               ></span>
               <span class="min-w-0 flex-1">
                 <span class="block truncate text-[13px]" style="color:var(--text)">{entry.name}</span>

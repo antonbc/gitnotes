@@ -61,7 +61,7 @@
       </svg>
       <button
         class="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap font-semibold text-text {btnReset}"
-        title={node.path || node.name}
+        use:tooltip={{ label: open ? "Collapse folder" : "Expand folder", placement: "right" }}
         onclick={() => (open = !open)}
       >
         {displayName}
@@ -86,7 +86,7 @@
       </svg>
       <button
         class="flex-1 overflow-hidden text-left text-ellipsis whitespace-nowrap {btnReset}"
-        title={node.path}
+        use:tooltip={{ label: node.path, placement: "right" }}
         onclick={() => onOpen(node.path)}
       >
         {displayName}

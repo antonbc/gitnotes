@@ -19,12 +19,17 @@
   const emptyClass =
     "grid place-items-center min-h-[220px] p-8 text-text-faint text-[13px] font-[family-name:var(--font-ui)]";
 
-  let html = $state("");
+  // Markdown renders synchronously in the same update as the editor change,
+  // so the preview can never lag a frame behind or briefly show the previous
+  // tab's note (which the old effect-based render did).
+  const html = $derived(ext === "md" ? renderMarkdown(content) : "");
+
   let svgPages = $state<string[]>([]);
   let diagnostics = $state<Diagnostic[]>([]);
   let lastGoodSvg = $state<string[]>([]);
   let rendering = $state(false);
   let compileToken = 0;
+  let lastCompiledPath: string | null = null;
 
   $effect(() => {
     const sourcePath = path;
@@ -34,11 +39,20 @@
     const token = ++compileToken;
 
     if (sourceExt === "md") {
-      html = renderMarkdown(sourceContent);
       diagnostics = [];
       svgPages = [];
       rendering = false;
+      lastCompiledPath = null;
       return;
+    }
+
+    // Switching to a different Typst note: drop the previous note's pages so
+    // they never show under the new tab while its first compile runs.
+    if (sourcePath !== lastCompiledPath) {
+      lastCompiledPath = sourcePath;
+      svgPages = [];
+      lastGoodSvg = [];
+      diagnostics = [];
     }
 
     if (!sourceContent.trim()) {
@@ -48,7 +62,7 @@
       return;
     }
 
-    rendering = Boolean(sourceContent.trim());
+    rendering = true;
     const handle = window.setTimeout(async () => {
       try {
         const result = await ipc.compileTypst(sourcePath, sourceContent);
@@ -97,10 +111,8 @@
   {/if}
 
   {#if ext === "md"}
-    {#if content.trim() && html.trim()}
+    {#if content.trim()}
       <article class="markdown-body max-w-[720px] px-11 pt-9 pb-20 leading-[1.72] text-[15px] text-text">{@html html}</article>
-    {:else if content.trim()}
-      <div class={emptyClass}>Preview is updating...</div>
     {:else}
       <div class={emptyClass}>Nothing to preview yet.</div>
     {/if}

@@ -1,3 +1,4 @@
+import { SvelteSet } from "svelte/reactivity";
 import type { Ext, ViewMode } from "$lib/types";
 
 export interface OpenTab {
@@ -16,8 +17,12 @@ export const editorState = $state<{
   viewMode: ViewMode;
   vimMode: boolean;
   toolbar: boolean;
-  /** paths written to disk but not yet committed/pushed */
-  localChanges: Set<string>;
+  /**
+   * Paths written to disk but not yet committed/pushed. Must stay a
+   * SvelteSet: plain Sets are not proxied by $state, so add/delete would
+   * not update the commit/push button or the status-bar badge.
+   */
+  localChanges: SvelteSet<string>;
   /** autosave debounce in flight */
   saving: boolean;
   saveError: string | null;
@@ -33,7 +38,7 @@ export const editorState = $state<{
   viewMode: "split",
   vimMode: true,
   toolbar: true,
-  localChanges: new Set(),
+  localChanges: new SvelteSet(),
   saving: false,
   saveError: null,
   lastSavedAt: null,

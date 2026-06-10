@@ -13,6 +13,7 @@
     onTrash,
     onReveal,
     onSearchClick,
+    onTrashOpen,
   }: {
     root: FileNode | null;
     activePath: string | null;
@@ -22,6 +23,7 @@
     onTrash: (path: string) => void;
     onReveal: (path: string) => void;
     onSearchClick: () => void;
+    onTrashOpen: () => void;
   } = $props();
 
   function countFiles(node: FileNode | null): number {
@@ -69,7 +71,7 @@
         disabled={!root}
         onclick={() => onCreate("", "typ")}
       >
-        <span class="w-[5px] h-[5px] rounded-full inline-block shrink-0 bg-[#9f70d4]"></span>typ
+        <span class="w-[5px] h-[5px] rounded-full inline-block shrink-0 bg-[var(--badge-typ)]"></span>typ
       </button>
     </div>
   </div>
@@ -114,6 +116,19 @@
     {:else}
       <span class="inline-flex items-center gap-1 text-[11.5px] text-text-faint">local</span>
     {/if}
-    <span class="text-[11px] text-text-faint">{noteCount} notes</span>
+    <span class="flex items-center gap-1">
+      <span class="text-[11px] text-text-faint">{noteCount} notes</span>
+      <button
+        class="grid place-items-center w-5 h-5 rounded-[5px] bg-transparent border-0 p-0 text-text-faint transition-colors duration-100 enabled:hover:bg-bg-hover enabled:hover:text-text disabled:opacity-45 disabled:cursor-default"
+        aria-label="Open Trash"
+        use:tooltip={{ label: root ? "Open Trash" : "Open a vault first", placement: "top" }}
+        disabled={!root}
+        onclick={onTrashOpen}
+      >
+        <svg width="11" height="11" viewBox="0 0 16 16" fill="none">
+          <path d="M3 6l1 8h8l1-8M1 4h14M6 4V2h4v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </span>
   </div>
 </div>
